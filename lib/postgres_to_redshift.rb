@@ -7,19 +7,22 @@ require 'tempfile'
 require "postgres_to_redshift/table"
 require "postgres_to_redshift/column"
 
+
 class PostgresToRedshift
   class << self
     attr_accessor :source_uri, :target_uri
   end
 
   attr_reader :source_connection, :target_connection, :s3
+  attr_accessor :synchronized_tables
 
   KILOBYTE = 1024
   MEGABYTE = KILOBYTE * 1024
   GIGABYTE = MEGABYTE * 1024
 
-  def self.update_tables
+  def self.update_tables(synchronized_tables = nil)
     update_tables = PostgresToRedshift.new
+    update_tables.synchronized_tables = synchronized_tables
 
     update_tables.tables.each do |table|
       target_connection.exec("CREATE TABLE IF NOT EXISTS #{schema}.#{target_connection.quote_ident(table.target_table_name)} (#{table.columns_for_create})")
@@ -68,8 +71,10 @@ class PostgresToRedshift
   end
 
   def tables
+
     source_connection.exec("SELECT * FROM information_schema.tables WHERE table_schema = 'public' AND table_type in ('BASE TABLE', 'VIEW')").map do |table_attributes|
       table = Table.new(attributes: table_attributes)
+      next unless synchronized_tables && synchronized_tables.index(table.name)
       next if table.name =~ /^pg_/
       table.columns = column_definitions(table)
       table
@@ -131,7 +136,7 @@ class PostgresToRedshift
   def import_table(table)
     puts "Importing #{table.target_table_name}"
     schema = self.class.schema
-    
+
     target_connection.exec("DROP TABLE IF EXISTS #{schema}.#{table.target_table_name}_updating")
 
     target_connection.exec("BEGIN;")
@@ -143,5 +148,7 @@ class PostgresToRedshift
     target_connection.exec("COPY #{schema}.#{target_connection.quote_ident(table.target_table_name)} FROM 's3://#{ENV['S3_DATABASE_EXPORT_BUCKET']}/export/#{table.target_table_name}.psv.gz' CREDENTIALS 'aws_access_key_id=#{ENV['S3_DATABASE_EXPORT_ID']};aws_secret_access_key=#{ENV['S3_DATABASE_EXPORT_KEY']}' GZIP TRUNCATECOLUMNS ESCAPE DELIMITER as '|';")
 
     target_connection.exec("COMMIT;")
+
+    target_connection.exec("DROP TABLE IF EXISTS #{schema}.#{table.target_table_name}_updating")
   end
 end

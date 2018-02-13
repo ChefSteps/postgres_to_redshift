@@ -31,6 +31,8 @@ class PostgresToRedshift
 
       update_tables.import_table(table)
     end
+    puts "Granting select on all to dev"
+    target_connection.exec("grant select on all tables in schema public to group devs;")
   end
 
   def self.source_uri
@@ -82,7 +84,7 @@ class PostgresToRedshift
   end
 
   def column_definitions(table)
-    source_connection.exec("SELECT * FROM information_schema.columns WHERE table_schema='public' AND table_name='#{table.name}' order by ordinal_position")
+    source_connection.exec("SELECT * FROM information_schema.columns WHERE table_schema='public' AND table_name='#{table.name}' AND column_name != 'tax_rate' order by ordinal_position")
   end
 
   def s3
@@ -105,7 +107,10 @@ class PostgresToRedshift
 
       source_connection.copy_data(copy_command) do
         while row = source_connection.get_copy_data
-          zip.write(row)
+          #puts "ZZZZZ ##{row.encoding}"
+          row = row.force_encoding('UTF-8')
+          #puts "ZZYY ##{row.encoding}"
+          zip.write(row.force_encoding('UTF-8'))
           if (zip.pos > chunksize)
             zip.finish
             tmpfile.rewind
@@ -123,6 +128,7 @@ class PostgresToRedshift
       upload_table(table, tmpfile, chunk)
       source_connection.reset
     rescue Exception => e
+      puts "ZZZ ERROR"
       puts e.inspect
       puts e.backtrace
     ensure
@@ -148,7 +154,7 @@ class PostgresToRedshift
     target_connection.exec("ALTER TABLE #{schema}.#{target_connection.quote_ident(table.target_table_name)} RENAME TO #{table.target_table_name}_updating")
 
     target_connection.exec("CREATE TABLE #{schema}.#{target_connection.quote_ident(table.target_table_name)} (#{table.columns_for_create})")
-    s = "COPY #{schema}.#{target_connection.quote_ident(table.target_table_name)} FROM 's3://#{ENV['S3_DATABASE_EXPORT_BUCKET']}/export/#{table.target_table_name}.psv.gz' CREDENTIALS 'aws_access_key_id=#{ENV['S3_DATABASE_EXPORT_ID']};aws_secret_access_key=#{ENV['S3_DATABASE_EXPORT_KEY']}' GZIP TRUNCATECOLUMNS ESCAPE DELIMITER as '|' NULL 'NaN';"
+    s = "COPY #{schema}.#{target_connection.quote_ident(table.target_table_name)} FROM 's3://#{ENV['S3_DATABASE_EXPORT_BUCKET']}/export/#{table.target_table_name}.psv.gz' CREDENTIALS 'aws_access_key_id=#{ENV['S3_DATABASE_EXPORT_ID']};aws_secret_access_key=#{ENV['S3_DATABASE_EXPORT_KEY']}' GZIP TRUNCATECOLUMNS ESCAPE DELIMITER as '|';"
     target_connection.exec(s)
 
 

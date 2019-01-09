@@ -33,6 +33,7 @@ class PostgresToRedshift
     end
     puts "Granting select on all to dev"
     target_connection.exec("grant select on all tables in schema public to group devs;")
+    target_connection.exec("grant select on all tables in schema public to group readonly;")
   end
 
   def self.source_uri

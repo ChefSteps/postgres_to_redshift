@@ -52,6 +52,7 @@ class PostgresToRedshift::Column
     "jsonb" => "CHARACTER VARYING(65535)",
     "bytea" => "CHARACTER VARYING(65535)",
     "money" => "DECIMAL(19,2)",
+    "numeric" => "DECIMAL(19,2)",
     "oid" => "CHARACTER VARYING(65535)",
     "ARRAY" => "CHARACTER VARYING(65535)",
     "USER-DEFINED" => "CHARACTER VARYING(65535)",
